@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import websockets
 import json
+import os
 from server_const import Status, RequestType, ENTITY_TYPE
 
 parser = argparse.ArgumentParser(description='Host machine CLI')
@@ -14,11 +15,13 @@ parser.add_argument('-s', '--server-url', type=str,
                     required=True, help="Address of the server")
 parser.add_argument('-m', '--max-memory', type=int, required=False,
                     help='Max memory allowed to be stored on the machine')
+parser.add_argument('-d', '--delete',
+                    help= 'Request to delete the stored files' )
 
 args = parser.parse_args()
 
-server_url = args.server_url
-
+SERVER_URL = args.server_url
+STORAGE_DIRECTORY = "filestore"
 
 def createInitJSON(username, password):
     data = {
@@ -63,6 +66,18 @@ def createRetrieveFileResponseJSON(status, message, filename):
 
     return json.dumps(data)
 
+def createRedistributionRequest():
+    folder_path = os.getcwd()
+    files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+    
+    data = {
+        "requestType" : RequestType.REDISTRIBUTE_FILES,
+        "entityType" : ENTITY_TYPE, 
+        "filenames" : files
+    }
+    
+    return json.dumps(data)
+
 
 def parseInitResponse(response):
     try:
@@ -90,7 +105,8 @@ def parseStoreRequest(request):
 
 
 async def main():
-    async with websockets.connect(server_url, max_size=2**27) as websocket:
+    async with websockets.connect(SERVER_URL, max_size=2**27) as websocket:
+        
         # startup and send init message to the server
         init_message = createInitJSON(args.username, args.password)
         await websocket.send(init_message)
@@ -99,6 +115,10 @@ async def main():
         if server_status == Status.FAIL:
             print("Server in bad state. Please try again later.")
             exit(0)
+            
+        if args.delete: 
+            redistribute_msg = createRedistributionRequest()
+            await websocket.send(redistribute_msg)
 
         # await for message from server
         while True:
@@ -127,6 +147,18 @@ async def main():
                     status = Status.FAIL
                 response = createStoreFileResponseJSON(status, message)
                 await websocket.send(response)
+            
+            elif requestType == RequestType.CLEAN_FILES:
+                # delete the directory
+                # Get a list of all files in the directory
+                directory = os.getcwd() + f"/{STORAGE_DIRECTORY}"
+                
+                files = [os.path.join(directory, f) for f in os.listdir(directory)]
+
+                # Delete each file
+                for f in files:
+                    if os.path.isfile(f):
+                        os.remove(f)
 
 
 asyncio.get_event_loop().run_until_complete(main())
