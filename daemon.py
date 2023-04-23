@@ -43,7 +43,7 @@ def createStoreFileResponseJSON(status, message):
     return json.dumps(data)
 
 
-def createRetrieveFileResponseJSON(status, message, filename):
+def createRetrieveFileResponseJSON(status, message, filename, requestType):
     try:
         if status == Status.SUCCESS:
             # only process further if its not already a failure
@@ -58,7 +58,7 @@ def createRetrieveFileResponseJSON(status, message, filename):
     data = {
         "status": status,
         "message": message,
-        "requestType": RequestType.RETRIEVE_FILE,
+        "requestType": requestType,
         "entityType": ENTITY_TYPE,
         "body": content,
         "filename": filename
@@ -77,6 +77,8 @@ def createRedistributionRequest():
     }
     
     return json.dumps(data)
+
+
 
 
 def parseInitResponse(response):
@@ -103,6 +105,20 @@ def parseStoreRequest(request):
         print("Error: " + str(e))
         raise e
 
+def parseRedistributeResponse(response):
+    try:
+        return response['status']
+    except Exception as e:
+        print("Error: " + str(e))
+        raise e  
+    
+def parseFreeFileRequest(request):
+    try: 
+        return request['filename']
+    except Exception as e:
+        print("Error: " + str(e))
+        raise e     
+       
 
 async def main():
     async with websockets.connect(SERVER_URL, max_size=2**27) as websocket:
@@ -132,8 +148,7 @@ async def main():
             if requestType == RequestType.RETRIEVE_FILE:
                 # give back file
                 filename = parseRetrieveRequest(msg_json)
-                response = createRetrieveFileResponseJSON(
-                    Status.SUCCESS, "", filename)
+                response = createRetrieveFileResponseJSON(Status.SUCCESS, "", filename, RequestType.RETRIEVE_FILE)
                 await websocket.send(response)
 
             elif requestType == RequestType.SAVE_FILE:
@@ -151,17 +166,14 @@ async def main():
                 response = createStoreFileResponseJSON(status, message)
                 await websocket.send(response)
             
-            elif requestType == RequestType.CLEAN_FILES:
-                # delete the directory
-                # Get a list of all files in the directory
-                directory = os.getcwd() + f"/{STORAGE_DIRECTORY}"
+            elif requestType == RequestType.FREE_FILE:
+                filename = parseFreeFileRequest(msg_json)
+                status = Status.SUCCESS
+                message = ""
+                response = createRetrieveFileResponseJSON(status, message, filename, RequestType.FREE_FILE)
                 
-                files = [os.path.join(directory, f) for f in os.listdir(directory)]
-
-                # Delete each file
-                for f in files:
-                    if os.path.isfile(f):
-                        os.remove(f)
+                os.remove(STORAGE_DIRECTORY + "/" + filename)
+                
 
 
 asyncio.get_event_loop().run_until_complete(main())

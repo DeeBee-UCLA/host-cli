@@ -8,6 +8,6 @@ class RequestType:
     SAVE_FILE = "SaveFile"
     RETRIEVE_FILE = "RetrieveFile"
     REDISTRIBUTE_FILES = "RedistributeFiles"
-    CLEAN_FILES = "CleanFiles"
+    FREE_FILE = "FreeFile"
 
 ENTITY_TYPE = "Host"
