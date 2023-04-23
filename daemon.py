@@ -15,13 +15,14 @@ parser.add_argument('-s', '--server-url', type=str,
                     required=True, help="Address of the server")
 parser.add_argument('-m', '--max-memory', type=int, required=False,
                     help='Max memory allowed to be stored on the machine')
-parser.add_argument('-d', '--delete',
-                    help= 'Request to delete the stored files' )
+parser.add_argument('-d', '--delete', action="store_true",
+                    help='Request to delete the stored files')
 
 args = parser.parse_args()
 
 SERVER_URL = args.server_url
 STORAGE_DIRECTORY = "filestore"
+
 
 def createInitJSON(username, password):
     data = {
@@ -43,11 +44,11 @@ def createStoreFileResponseJSON(status, message):
     return json.dumps(data)
 
 
-def createRetrieveFileResponseJSON(status, message, filename, requestType):
+def createRetrieveFileResponseJSON(status, message, filepath, name, requestType):
     try:
         if status == Status.SUCCESS:
             # only process further if its not already a failure
-            with open(filename, 'r') as f:
+            with open(filepath, 'r') as f:
                 content = f.read()
     except Exception as e:
         status = Status.FAIL
@@ -61,24 +62,24 @@ def createRetrieveFileResponseJSON(status, message, filename, requestType):
         "requestType": requestType,
         "entityType": ENTITY_TYPE,
         "body": content,
-        "filename": filename
+        "filename": name
     }
 
     return json.dumps(data)
+
 
 def createRedistributionRequest():
     folder_path = os.getcwd()
-    files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
-    
+    files = [f for f in os.listdir(STORAGE_DIRECTORY) if os.path.isfile(
+        os.path.join(STORAGE_DIRECTORY, f))]
+
     data = {
-        "requestType" : RequestType.REDISTRIBUTE_FILES,
-        "entityType" : ENTITY_TYPE, 
-        "filenames" : files
+        "requestType": RequestType.REDISTRIBUTE_FILES,
+        "entityType": ENTITY_TYPE,
+        "filenames": files
     }
-    
+
     return json.dumps(data)
-
-
 
 
 def parseInitResponse(response):
@@ -105,24 +106,26 @@ def parseStoreRequest(request):
         print("Error: " + str(e))
         raise e
 
+
 def parseRedistributeResponse(response):
     try:
         return response['status']
     except Exception as e:
         print("Error: " + str(e))
-        raise e  
-    
+        raise e
+
+
 def parseFreeFileRequest(request):
-    try: 
+    try:
         return request['filename']
     except Exception as e:
         print("Error: " + str(e))
-        raise e     
-       
+        raise e
+
 
 async def main():
     async with websockets.connect(SERVER_URL, max_size=2**27) as websocket:
-        
+
         # startup and send init message to the server
         init_message = createInitJSON(args.username, args.password)
         await websocket.send(init_message)
@@ -131,13 +134,13 @@ async def main():
         if server_status == Status.FAIL:
             print("Server in bad state. Please try again later.")
             exit(0)
-            
-        if args.delete: 
+
+        if args.delete:
             redistribute_msg = createRedistributionRequest()
             await websocket.send(redistribute_msg)
 
-        if not os.path.exists(SERVER_URL):
-            os.makedirs(SERVER_URL)
+        if not os.path.exists(STORAGE_DIRECTORY):
+            os.makedirs(STORAGE_DIRECTORY)
 
         # await for message from server
         while True:
@@ -148,7 +151,9 @@ async def main():
             if requestType == RequestType.RETRIEVE_FILE:
                 # give back file
                 filename = parseRetrieveRequest(msg_json)
-                response = createRetrieveFileResponseJSON(Status.SUCCESS, "", filename, RequestType.RETRIEVE_FILE)
+                filepath = STORAGE_DIRECTORY + "/" + filename
+                response = createRetrieveFileResponseJSON(
+                    Status.SUCCESS, "", filepath, filename, RequestType.RETRIEVE_FILE)
                 await websocket.send(response)
 
             elif requestType == RequestType.SAVE_FILE:
@@ -165,15 +170,17 @@ async def main():
                     status = Status.FAIL
                 response = createStoreFileResponseJSON(status, message)
                 await websocket.send(response)
-            
+
             elif requestType == RequestType.FREE_FILE:
                 filename = parseFreeFileRequest(msg_json)
+                print("Received free file req:", msg)
+                filepath = STORAGE_DIRECTORY + "/" + filename
                 status = Status.SUCCESS
                 message = ""
-                response = createRetrieveFileResponseJSON(status, message, filename, RequestType.FREE_FILE)
-                
+                response = createRetrieveFileResponseJSON(
+                    status, message, filepath, filename, RequestType.FREE_FILE)
                 os.remove(STORAGE_DIRECTORY + "/" + filename)
-                
+                await websocket.send(response)
 
 
 asyncio.get_event_loop().run_until_complete(main())
