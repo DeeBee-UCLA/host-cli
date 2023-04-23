@@ -6,35 +6,42 @@ from server_const import Status, RequestType, ENTITY_TYPE
 
 parser = argparse.ArgumentParser(description='Host machine CLI')
 
-parser.add_argument('-u', '--username', type=str, required=True, help='Username')
-parser.add_argument('-p', '--password', type=str, required=True, help='Password')
-parser.add_argument('-s', '--server-url', type=str, required=True, help="Address of the server")
-parser.add_argument('-m', '--max-memory', type=int, required=False, help='Max memory allowed to be stored on the machine')
+parser.add_argument('-u', '--username', type=str,
+                    required=True, help='Username')
+parser.add_argument('-p', '--password', type=str,
+                    required=True, help='Password')
+parser.add_argument('-s', '--server-url', type=str,
+                    required=True, help="Address of the server")
+parser.add_argument('-m', '--max-memory', type=int, required=False,
+                    help='Max memory allowed to be stored on the machine')
 
 args = parser.parse_args()
 
 server_url = args.server_url
 
+
 def createInitJSON(username, password):
     data = {
-        "username" : username,
-        "password" : password,
+        "username": username,
+        "password": password,
         "requestType": RequestType.INIT,
         "entityType": ENTITY_TYPE
     }
     return json.dumps(data)
 
+
 def createStoreFileResponseJSON(status, message):
     data = {
-        "status" : status,
-        "message" : message,
+        "status": status,
+        "message": message,
         "requestType": RequestType.SAVE_FILE,
         "entityType": ENTITY_TYPE
     }
-    return json.dumps(data) 
+    return json.dumps(data)
+
 
 def createRetrieveFileResponseJSON(status, message, filename):
-    try: 
+    try:
         if status == Status.SUCCESS:
             # only process further if its not already a failure
             with open(filename, 'r') as f:
@@ -44,17 +51,18 @@ def createRetrieveFileResponseJSON(status, message, filename):
         message = f"File could not be opened on the host machine. {str(e)}"
         print(message)
         content = ""
-    
+
     data = {
-        "status" : status,
-        "message" : message, 
-        "responseType": RequestType.RETRIEVE_FILE,
-        "entityType": ENTITY_TYPE, 
-        "body": content
+        "status": status,
+        "message": message,
+        "requestType": RequestType.RETRIEVE_FILE,
+        "entityType": ENTITY_TYPE,
+        "body": content,
+        "filename": filename
     }
-    
+
     return json.dumps(data)
-    
+
 
 def parseInitResponse(response):
     try:
@@ -62,23 +70,24 @@ def parseInitResponse(response):
     except Exception as e:
         print("Error " + str(e))
 
+
 def parseRetrieveRequest(request):
     try:
         return request['filename']
     except Exception as e:
         print("Error: " + str(e))
         raise e
-    
+
+
 def parseStoreRequest(request):
-    try: 
+    try:
         filename = request['filename']
         body = request['body']
         return filename, body
     except Exception as e:
         print("Error: " + str(e))
         raise e
- 
-    
+
 
 async def main():
     async with websockets.connect(server_url, max_size=2**27) as websocket:
@@ -90,24 +99,25 @@ async def main():
         if server_status == Status.FAIL:
             print("Server in bad state. Please try again later.")
             exit(0)
-            
+
         # await for message from server
-        while True: 
-            msg = websocket.recv() 
+        while True:
+            msg = await websocket.recv()
             msg_json = json.loads(msg)
             requestType = msg_json['requestType']
-            
+
             if requestType == RequestType.RETRIEVE_FILE:
                 # give back file
                 filename = parseRetrieveRequest(msg_json)
-                response = createRetrieveFileResponseJSON(Status.SUCCESS, "", filename)
+                response = createRetrieveFileResponseJSON(
+                    Status.SUCCESS, "", filename)
                 await websocket.send(response)
-                
+
             elif requestType == RequestType.SAVE_FILE:
                 filename, body = parseStoreRequest(msg_json)
                 status = Status.SUCCESS
                 message = ""
-                try: 
+                try:
                     # save file
                     with open(filename, "w") as f:
                         f.write(body)
@@ -117,6 +127,6 @@ async def main():
                     status = Status.FAIL
                 response = createStoreFileResponseJSON(status, message)
                 await websocket.send(response)
-        
-        
+
+
 asyncio.get_event_loop().run_until_complete(main())
