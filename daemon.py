@@ -120,6 +120,9 @@ async def main():
             redistribute_msg = createRedistributionRequest()
             await websocket.send(redistribute_msg)
 
+        if not os.path.exists(SERVER_URL):
+            os.makedirs(SERVER_URL)
+
         # await for message from server
         while True:
             msg = await websocket.recv()
@@ -139,7 +142,7 @@ async def main():
                 message = ""
                 try:
                     # save file
-                    with open(filename, "w") as f:
+                    with open(STORAGE_DIRECTORY + "/" + filename, "w") as f:
                         f.write(body)
                 except Exception as e:
                     message = str(e)
